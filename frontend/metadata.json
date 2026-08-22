@@ -1,0 +1,6 @@
+{
+  "name": "ScrapeGuard AI",
+  "description": "Self-healing job intelligence infrastructure powered by Bright Data Scraper Studio. Detect, diagnose, heal, validate, and recover web data pipelines.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
