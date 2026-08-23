@@ -32,6 +32,25 @@ def now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def time_ago(timestamp: str) -> str:
+    then = datetime.fromisoformat(timestamp)
+    seconds = max(0, (datetime.now(UTC) - then).total_seconds())
+    if seconds < 60:
+        return "just now"
+    minutes = int(seconds // 60)
+    if minutes < 60:
+        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+    hours = int(minutes // 60)
+    if hours < 24:
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    days = int(hours // 24)
+    return f"{days} day{'s' if days != 1 else ''} ago"
+
+
+def human_time(timestamp: str) -> str:
+    return datetime.fromisoformat(timestamp).strftime("%b %d, %H:%M UTC")
+
+
 @contextmanager
 def db() -> Any:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -69,7 +88,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS incidents (
               id TEXT PRIMARY KEY, source_id TEXT NOT NULL, run_id TEXT NOT NULL,
               status TEXT NOT NULL, severity TEXT NOT NULL, title TEXT NOT NULL,
-              diagnosis TEXT NOT NULL, health_before REAL, health_after REAL,
+              diagnosis TEXT NOT NULL, health_before REAL, health_during REAL, health_after REAL,
               created_at TEXT NOT NULL, resolved_at TEXT
             );
             CREATE TABLE IF NOT EXISTS recovery_events (
@@ -227,14 +246,34 @@ def ingest(source_id: str, payload: IngestPayload) -> dict[str, Any]:
             connection.execute("INSERT INTO jobs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (f"job_{uuid.uuid4().hex[:12]}", source_id, run_id, job["title"], job["company"], job["location"], job["description"], json.dumps(job["skills"] or []), job["salary"], job["employment_type"], job["source_url"], json.dumps(raw), completed_at))
         connection.execute("UPDATE sources SET status = ?, updated_at = ? WHERE id = ?", (status, completed_at, source_id))
         incident = None
+        resolved_incidents: list[str] = []
         if not contract["passed"]:
             incident_id = f"inc_{uuid.uuid4().hex[:10]}"
             diagnosis = " ".join(contract["issues"])
             severity = "critical" if contract["health_score"] < source["alert_threshold"] else "warning"
-            connection.execute("INSERT INTO incidents VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, NULL)", (incident_id, source_id, run_id, severity, "Data contract violation detected", diagnosis, previous["health_score"] if previous else None, contract["health_score"], completed_at))
+            connection.execute(
+                "INSERT INTO incidents VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, NULL, ?, NULL)",
+                (incident_id, source_id, run_id, severity, "Data contract violation detected", diagnosis, previous["health_score"] if previous else None, contract["health_score"], completed_at),
+            )
             connection.execute("INSERT INTO recovery_events VALUES (?, ?, 'detect', ?, ?)", (f"evt_{uuid.uuid4().hex[:10]}", incident_id, diagnosis, completed_at))
             incident = {"id": incident_id, "severity": severity, "diagnosis": diagnosis}
-    return {"run_id": run_id, "status": status, "validation": {key: value for key, value in contract.items() if key != "normalized"}, "incident": incident}
+        else:
+            # A healthy run closes the loop: any incident still open/healing for this
+            # source is the one this run just proved recovered from.
+            open_incidents = connection.execute(
+                "SELECT id FROM incidents WHERE source_id = ? AND status IN ('open', 'healing')", (source_id,)
+            ).fetchall()
+            for row in open_incidents:
+                connection.execute(
+                    "UPDATE incidents SET status = 'resolved', health_after = ?, resolved_at = ? WHERE id = ?",
+                    (contract["health_score"], completed_at, row["id"]),
+                )
+                connection.execute(
+                    "INSERT INTO recovery_events VALUES (?, ?, 'recover', ?, ?)",
+                    (f"evt_{uuid.uuid4().hex[:10]}", row["id"], f"Run {run_id} passed the data contract (health {contract['health_score']}). Incident resolved.", completed_at),
+                )
+                resolved_incidents.append(row["id"])
+    return {"run_id": run_id, "status": status, "validation": {key: value for key, value in contract.items() if key != "normalized"}, "incident": incident, "resolved_incidents": resolved_incidents}
 
 
 @app.post("/api/sources/{source_id}/run", status_code=201)
@@ -302,18 +341,116 @@ def scrapers() -> list[dict[str, Any]]:
     return [source_to_scraper(source, runs.get(source["id"])) for source in sources]
 
 
+def job_to_view(row: sqlite3.Row, source: sqlite3.Row | None) -> dict[str, Any]:
+    skills = json.loads(row["skills"]) if row["skills"] else []
+    location = row["location"] or ""
+    quality_fields = [row["title"], row["company"], row["location"], row["source_url"]]
+    quality_score = round(sum(bool(field) for field in quality_fields) / len(quality_fields) * 100)
+    return {
+        "id": row["id"],
+        "title": row["title"] or "Untitled role",
+        "company": row["company"] or "Unknown company",
+        "location": location or "Not specified",
+        "isRemote": "remote" in location.lower(),
+        "experience": "Not specified",
+        "salary": row["salary"] or "Not disclosed",
+        "skills": skills,
+        "description": row["description"] or "",
+        "source": source["name"] if source else "Unknown source",
+        "sourceUrl": row["source_url"] or "",
+        "collectorId": source["collector_id"] if source and source["collector_id"] else "pending",
+        "lastSeen": row["scraped_at"],
+        "scrapedAt": row["scraped_at"],
+        "qualityScore": quality_score,
+        "fieldValidity": {
+            "job_title": bool(row["title"]),
+            "company": bool(row["company"]),
+            "location": bool(row["location"]),
+            "experience": False,
+            "salary": bool(row["salary"]),
+            "skills": len(skills) > 0,
+            "description": bool(row["description"]),
+        },
+    }
+
+
 @app.get("/api/jobs")
 def jobs(limit: int = 100) -> list[dict[str, Any]]:
     with db() as connection:
         rows = connection.execute("SELECT * FROM jobs ORDER BY scraped_at DESC LIMIT ?", (min(limit, 500),)).fetchall()
-    return [{**row_dict(row), "skills": json.loads(row["skills"])} for row in rows]
+        sources = {row["id"]: row for row in connection.execute("SELECT * FROM sources").fetchall()}
+    return [job_to_view(row, sources.get(row["source_id"])) for row in rows]
+
+
+STAGE_TITLES = {
+    "detect": "Contract violation detected",
+    "heal": "Bright Data heal requested",
+    "heal_failed": "Bright Data heal attempt failed",
+    "recover": "Recovery verified",
+}
+
+
+def event_to_view(event: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": event["id"],
+        "timestamp": event["created_at"],
+        "timeFormatted": human_time(event["created_at"]),
+        "title": STAGE_TITLES.get(event["stage"], event["stage"].replace("_", " ").title()),
+        "description": event["message"],
+        "stage": "heal" if event["stage"] == "heal_failed" else event["stage"],
+        "status": "done",
+    }
+
+
+def incident_to_view(row: sqlite3.Row, source: sqlite3.Row | None, record_count: int, events: list[sqlite3.Row]) -> dict[str, Any]:
+    required_fields = json.loads(source["required_fields"]) if source else []
+    affected_fields = [field for field in required_fields if field in row["diagnosis"]]
+    is_resolved = row["status"] == "resolved"
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "source": source["name"] if source else "Unknown source",
+        "collectorId": source["collector_id"] if source and source["collector_id"] else "pending",
+        "severity": row["severity"],
+        "status": row["status"],
+        "detectedAt": row["created_at"],
+        "resolvedAt": row["resolved_at"],
+        "timeAgo": time_ago(row["created_at"]),
+        "affectedFields": affected_fields,
+        "healthBefore": row["health_before"] if row["health_before"] is not None else row["health_during"],
+        "healthDuring": row["health_during"],
+        "healthAfter": row["health_after"] if row["health_after"] is not None else row["health_during"],
+        "recordsAffected": record_count,
+        "rootCause": row["diagnosis"],
+        "repairSummary": (
+            f"Bright Data healed collector {source['collector_id']} and the recovered data now passes the {source['name']} contract."
+            if is_resolved and source
+            else "Awaiting Bright Data heal and a verified re-run before this incident can close."
+        ),
+        "recoveryStatus": "Auto-healed via Bright Data" if is_resolved else row["status"].replace("_", " ").title(),
+        "timeline": [event_to_view(event) for event in events],
+    }
 
 
 @app.get("/api/incidents")
 def incidents() -> list[dict[str, Any]]:
     with db() as connection:
         rows = connection.execute("SELECT * FROM incidents ORDER BY created_at DESC").fetchall()
-    return [row_dict(row) for row in rows]
+        sources = {row["id"]: row for row in connection.execute("SELECT * FROM sources").fetchall()}
+        runs = {row["id"]: row for row in connection.execute("SELECT * FROM runs").fetchall()}
+        events = connection.execute("SELECT * FROM recovery_events ORDER BY created_at ASC").fetchall()
+    events_by_incident: dict[str, list[sqlite3.Row]] = {}
+    for event in events:
+        events_by_incident.setdefault(event["incident_id"], []).append(event)
+    return [
+        incident_to_view(
+            row,
+            sources.get(row["source_id"]),
+            runs[row["run_id"]]["record_count"] if row["run_id"] in runs else 0,
+            events_by_incident.get(row["id"], []),
+        )
+        for row in rows
+    ]
 
 
 @app.post("/api/incidents/{incident_id}/heal")

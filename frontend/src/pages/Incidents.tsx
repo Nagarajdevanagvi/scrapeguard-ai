@@ -52,6 +52,23 @@ export const Incidents: React.FC = () => {
     return <LoadingState label="Loading incident records and triage logs..." />;
   }
 
+  const openIncidents = incidents.filter((inc) => inc.status !== 'resolved');
+  const resolvedIncidents = incidents.filter((inc) => inc.status === 'resolved');
+  const today = new Date().toDateString();
+  const resolvedToday = resolvedIncidents.filter(
+    (inc) => inc.resolvedAt && new Date(inc.resolvedAt).toDateString() === today
+  ).length;
+  const criticalOpen = openIncidents.filter((inc) => inc.severity === 'critical').length;
+  const recoveryMinutes = resolvedIncidents
+    .filter((inc) => inc.resolvedAt)
+    .map((inc) => (new Date(inc.resolvedAt as string).getTime() - new Date(inc.detectedAt).getTime()) / 60000);
+  const avgRecoveryMinutes =
+    recoveryMinutes.length > 0
+      ? (recoveryMinutes.reduce((sum, value) => sum + value, 0) / recoveryMinutes.length).toFixed(1)
+      : null;
+  const autoRemediatedPct =
+    incidents.length > 0 ? Math.round((resolvedIncidents.length / incidents.length) * 100) : null;
+
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       {/* Header */}
@@ -61,8 +78,8 @@ export const Incidents: React.FC = () => {
             <h1 className="text-2xl font-bold font-mono tracking-tight text-white">
               Incidents & Triage
             </h1>
-            <Badge variant="success" dot size="md">
-              0 OPEN INCIDENTS
+            <Badge variant={openIncidents.length === 0 ? 'success' : 'danger'} dot size="md">
+              {openIncidents.length} OPEN INCIDENT{openIncidents.length === 1 ? '' : 'S'}
             </Badge>
           </div>
           <p className="text-xs sm:text-sm text-slate-400 font-mono">
@@ -72,7 +89,7 @@ export const Incidents: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <Badge variant="purple" size="sm" className="hidden sm:inline-flex">
-            Auto-Remediated: 100%
+            Auto-Remediated: {autoRemediatedPct !== null ? `${autoRemediatedPct}%` : 'N/A'}
           </Badge>
         </div>
       </div>
@@ -84,8 +101,12 @@ export const Incidents: React.FC = () => {
             <span>Open Incidents</span>
             <AlertTriangle className="w-3.5 h-3.5 text-slate-400" />
           </div>
-          <div className="text-2xl font-bold font-mono text-emerald-400">0</div>
-          <span className="text-[10px] text-emerald-400 font-mono">All queues clear</span>
+          <div className={`text-2xl font-bold font-mono ${openIncidents.length === 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {openIncidents.length}
+          </div>
+          <span className="text-[10px] text-emerald-400 font-mono">
+            {openIncidents.length === 0 ? 'All queues clear' : 'Needs attention'}
+          </span>
         </Card>
 
         <Card className="p-4 space-y-1">
@@ -93,7 +114,7 @@ export const Incidents: React.FC = () => {
             <span>Resolved Today</span>
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
           </div>
-          <div className="text-2xl font-bold font-mono text-white">3</div>
+          <div className="text-2xl font-bold font-mono text-white">{resolvedToday}</div>
           <span className="text-[10px] text-slate-400 font-mono">Self-healed autonomously</span>
         </Card>
 
@@ -102,8 +123,10 @@ export const Incidents: React.FC = () => {
             <span>Critical Issues</span>
             <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />
           </div>
-          <div className="text-2xl font-bold font-mono text-white">0</div>
-          <span className="text-[10px] text-slate-400 font-mono">Zero uncontained drops</span>
+          <div className="text-2xl font-bold font-mono text-white">{criticalOpen}</div>
+          <span className="text-[10px] text-slate-400 font-mono">
+            {criticalOpen === 0 ? 'Zero uncontained drops' : 'Awaiting healing'}
+          </span>
         </Card>
 
         <Card className="p-4 space-y-1">
@@ -111,8 +134,10 @@ export const Incidents: React.FC = () => {
             <span>Avg. Recovery Time</span>
             <Clock className="w-3.5 h-3.5 text-cyan-400" />
           </div>
-          <div className="text-2xl font-bold font-mono text-cyan-400">2.4 min</div>
-          <span className="text-[10px] text-slate-400 font-mono">Detection to hot-swap</span>
+          <div className="text-2xl font-bold font-mono text-cyan-400">
+            {avgRecoveryMinutes !== null ? `${avgRecoveryMinutes} min` : '—'}
+          </div>
+          <span className="text-[10px] text-slate-400 font-mono">Detection to verified recovery</span>
         </Card>
       </div>
 

@@ -68,7 +68,12 @@ export const api = {
     locations: string[];
     allSkills: string[];
   }> {
-    await new Promise((r) => setTimeout(r, 150));
+    try {
+      const live = await getLive<Job[]>('/api/jobs');
+      currentJobs = live.length ? live : mockJobs;
+    } catch {
+      currentJobs = mockJobs;
+    }
     let filtered = [...currentJobs];
 
     if (options?.search) {
@@ -149,7 +154,12 @@ export const api = {
    * Corresponds to: GET /api/incidents
    */
   async getIncidents(): Promise<Incident[]> {
-    await new Promise((r) => setTimeout(r, 100));
+    try {
+      const live = await getLive<Incident[]>('/api/incidents');
+      currentIncidents = live.length ? live : mockIncidents;
+    } catch {
+      currentIncidents = mockIncidents;
+    }
     return currentIncidents;
   },
 
