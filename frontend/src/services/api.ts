@@ -33,6 +33,12 @@ let currentIncidents = [...mockIncidents];
 let currentJobs = [...mockJobs];
 let activeHealingSession = { ...mockHealingSession };
 
+async function getLive<T>(path: string): Promise<T> {
+  const response = await fetch(`${BASE_URL}${path}`, { signal: AbortSignal.timeout(3000) });
+  if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+  return response.json() as Promise<T>;
+}
+
 export const api = {
   /**
    * Get overall dashboard metrics & pipeline status
@@ -43,13 +49,13 @@ export const api = {
     fieldQualities: FieldQuality[];
     primaryScraper: Scraper;
   }> {
-    // Simulated network delay
-    await new Promise((r) => setTimeout(r, 120));
-    return {
-      stats: mockDashboardStats,
-      fieldQualities: mockFieldQualities,
-      primaryScraper: mockScrapers[0],
-    };
+    try {
+      const live = await getLive<{ stats: DashboardStats; fieldQualities: FieldQuality[]; primaryScraper: Scraper | null }>('/api/dashboard');
+      if (live.primaryScraper) return { stats: live.stats, fieldQualities: live.fieldQualities, primaryScraper: live.primaryScraper };
+    } catch {
+      // The fallback is intentionally limited to a local/offline first-run experience.
+    }
+    return { stats: mockDashboardStats, fieldQualities: mockFieldQualities, primaryScraper: mockScrapers[0] };
   },
 
   /**
@@ -121,8 +127,12 @@ export const api = {
    * Corresponds to: GET /api/scrapers
    */
   async getScrapers(): Promise<Scraper[]> {
-    await new Promise((r) => setTimeout(r, 100));
-    return mockScrapers;
+    try {
+      const live = await getLive<Scraper[]>('/api/scrapers');
+      return live.length ? live : mockScrapers;
+    } catch {
+      return mockScrapers;
+    }
   },
 
   /**
@@ -130,8 +140,8 @@ export const api = {
    * Corresponds to: GET /api/scrapers/:id
    */
   async getScraper(id: string): Promise<Scraper | null> {
-    await new Promise((r) => setTimeout(r, 80));
-    return mockScrapers.find((s) => s.id === id || s.collectorId === id) || mockScrapers[0];
+    const scrapers = await this.getScrapers();
+    return scrapers.find((s) => s.id === id || s.collectorId === id) || scrapers[0] || null;
   },
 
   /**

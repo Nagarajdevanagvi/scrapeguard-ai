@@ -1,0 +1,9 @@
+{
+  "name": "Cutshort Public Job Listings",
+  "collector_id": "c_mt5gcvr895y7zea7e",
+  "target_url": "https://cutshort.io/jobs",
+  "contract": "public-job-listings-v1",
+  "required_fields": ["title", "company", "location", "source_url"],
+  "optional_fields": ["description", "skills", "salary", "employment_type"],
+  "notes": "Created with Bright Data Scraper Studio for the WeMakeDevs Scrape-Verse hackathon. This ID is a collector identifier, not a credential."
+}

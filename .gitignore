@@ -64,3 +64,16 @@ Thumbs.db
 logs/
 data/
 *.sqlite3
+# Runtime data and local credentials
+.venv/
+backend/data/
+.env
+.env.local
+frontend/node_modules/
+frontend/dist/
+
+# Application source directories that happen to use generic names.
+!frontend/src/data/
+!frontend/src/data/**
+!frontend/src/lib/
+!frontend/src/lib/**

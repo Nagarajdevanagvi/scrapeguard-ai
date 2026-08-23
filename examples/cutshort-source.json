@@ -1,0 +1,8 @@
+{
+  "name": "Cutshort Public Job Listings",
+  "target_url": "https://cutshort.io/jobs",
+  "collector_id": "c_mt5gcvr895y7zea7e",
+  "required_fields": ["title", "company", "location", "source_url"],
+  "min_records": 3,
+  "alert_threshold": 80
+}

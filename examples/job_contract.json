@@ -1,0 +1,12 @@
+{
+  "name": "public-job-listings-v1",
+  "description": "Stable contract for public job listing data returned by a Bright Data collector.",
+  "required_fields": ["title", "company", "location", "source_url"],
+  "optional_fields": ["description", "skills", "salary", "employment_type"],
+  "quality_thresholds": {
+    "minimum_records": 3,
+    "required_field_completeness": 0.9,
+    "duplicate_rate": 0.1,
+    "health_alert_score": 80
+  }
+}
