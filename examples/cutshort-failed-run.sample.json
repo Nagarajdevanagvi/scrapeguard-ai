@@ -1,0 +1,20 @@
+[
+  {
+    "skills": [],
+    "source_url": "https://cutshort.io/jobs/oq-jobs",
+    "product_page_url": "https://cutshort.io/jobs/oq-jobs",
+    "input": { "url": "https://cutshort.io/jobs" }
+  },
+  {
+    "skills": [],
+    "source_url": "https://cutshort.io/jobs/oracle-b2b-jobs",
+    "product_page_url": "https://cutshort.io/jobs/oracle-b2b-jobs",
+    "input": { "url": "https://cutshort.io/jobs" }
+  },
+  {
+    "skills": [],
+    "source_url": "https://cutshort.io/jobs/optimization-jobs",
+    "product_page_url": "https://cutshort.io/jobs/optimization-jobs",
+    "input": { "url": "https://cutshort.io/jobs" }
+  }
+]

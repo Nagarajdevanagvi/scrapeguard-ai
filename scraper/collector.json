@@ -1,0 +1,9 @@
+{
+  "name": "Cutshort Public Job Listings",
+  "collector_id": "c_mt5vcktj27revhtp8n",
+  "target_url": "https://cutshort.io/jobs",
+  "contract": "public-job-listings-v1",
+  "required_fields": ["title", "company", "location", "source_url"],
+  "optional_fields": ["description", "skills", "salary", "employment_type"],
+  "notes": "Created with Bright Data Scraper Studio for the WeMakeDevs Scrape-Verse hackathon. This ID is a collector identifier, not a credential. Replaces the original collector c_mt5gcvr895y7zea7e, which was retired after its underlying dataset became unlinked (dataset_id undefined) following an interrupted heal/refactor job."
+}
